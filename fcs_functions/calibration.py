@@ -23,6 +23,10 @@ conc_units = {
     'nM': 1000000000
 }
 
+k_b = 1.38*10**-23
+
+mu_water = 1.0016
+
 def confocal_widths(td: float, d: float, sp: float) -> tuple:
     '''
     '''
@@ -43,3 +47,12 @@ def calibrate_fcs(measured_td: float, measured_sp:float, calibration_label) -> f
             measured_sp
         )
     )
+
+def calibrated_conc(measured_n, confocal_volume, units = 'nM'):
+    return (measured_n/(confocal_volume*6.023*10**23))*conc_units[units]
+
+def calc_coeff(w1, t_d):
+    return w1**2/(4*t_d)
+
+def calc_hydrodynamic_radius(diff_co: float, viscosity: float, temperature: float) -> float:
+    return (k_b*temperature)/(6*pi*viscosity*diff_co)
