@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from . import calibration
 from . import raw_functions
 
@@ -43,6 +44,17 @@ def make_array(array_list):
         out.append(item_flt)
     return np.array(out)
 
+def average_time_series(data):
+    all_times = {x[0] for x in data[0]}
+    for rep in data:
+        all_times = all_times.intersection({x[0] for x in rep})
+    new_times = []
+    for rep in data:
+        new_times.append(np.array([x for x in rep if x[0] in all_times]))
+    
+    return {'mean': np.mean(np.array(new_times), axis = 0), 'stddev': np.std(np.array(new_times), axis = 0)}
+
+
 numeric_parameters = ['UnitFactor', 'Precision', 'Minimum', 'Maximum', 'StartValue', 'LinkIndex', 'ResultValid', 'Result', 'StandardDeviation']
 
 class FcsData(object):
@@ -84,11 +96,32 @@ class FcsData(object):
     
     def get_fit_parameters(self):
         if self.fit['Parameters']:
-            #return dict([(x, dict([(id, res['Result']) for id, res in y['Parameters'].items()])) for x,y in self.fit.items()])
             return dict([(x, y['Result']) for x,y in self.fit['Parameters'].items()])
         else:
             return 'No model fitted'
-        
+    
+    premade_plots = [
+        'ACF',
+        'PCH'
+    ]
+
+    def plot(self, axis = None, plot_type = 'CorrelationArray', **kwargs):
+        if plot_type in self.premade_plots:
+            if plot_type == 'ACF':
+                fig, ax = plt.subplots(nrows=2, figsize = [8,6], gridspec_kw={'height_ratios': [3,1]})
+
+                acf_data = self.data['CorrelationArray']
+                cr_data = self.data['CountRateArray']
+
+                ax[0].plot(acf_data[:,0], acf_data[:,1])
+                ax[1].plot(cr_data[:,0], cr_data[:,1])
+
+                ax[0].set_xscale('log')
+
+                plt.tight_layout()
+        else:
+            plot_data = self.data[plot_type]
+            axis.plot(plot_data[:,0], plot_data[:,1], **kwargs)
 
     def link_raw(self, path: str) -> None:
         self.raw = raw_functions.RawFile(path)
@@ -183,11 +216,31 @@ class Confocor3FCS(object):
                     self.hydrodynamic_radii[entry_id] = 'No model fit'
         else:
             print('Calibrate diffusion coefficients first')
-        
+    
+    premade_plots = ['ACF', 'PCH']
 
-    def plot_repeat(self, repeat: str):
-        pass
+    def plot_all_repeats(self, plot_type):
+        if plot_type in self.premade_plots:
+            if plot_type == 'ACF':
+                fig, ax = plt.subplots(nrows = 2, figsize = [8,6], gridspec_kw={'height_ratios': [3,1]}, dpi = 600)
 
-    def plot_all_repeats(self):
-        pass
+                for repeat, repeat_data in self.data.items():
+                    plot_kwargs = {
+                        'label': repeat,
+                        'alpha': 0.3
+                    }
+                    repeat_data.plot(axis = ax[0], plot_type = 'CorrelationArray', **plot_kwargs)
+                    repeat_data.plot(axis = ax[1], plot_type = 'CountRateArray', **plot_kwargs)
+                
+                av_plot_kwargs = {
+                    'label': 'Average',
+                    'color': 'black'
+                }
+                #self.average.plot(axis = ax[0], plot_type = 'CorrelationArray', **av_plot_kwargs)
+
+                ax[0].set_xscale('log')
+                ax[0].legend(loc = 'upper right')
+                plt.tight_layout()
+        else:
+            pass
 
