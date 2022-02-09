@@ -1,3 +1,5 @@
+'''FCS Objects
+'''
 import numpy as np
 import matplotlib.pyplot as plt
 from . import calibration
@@ -45,15 +47,22 @@ def make_array(array_list):
     return np.array(out)
 
 def average_time_series(data):
-    all_times = {x[0] for x in data[0]}
-    for rep in data:
-        all_times = all_times.intersection({x[0] for x in rep})
+    all_times = [set(rep[:,0]) for rep in data]
+    times = all_times[0]
+    for rep in all_times[1:]:
+        times = times.intersection(rep)
+    times_array = np.array(sorted(times))
     new_times = []
     for rep in data:
-        new_times.append(np.array([x for x in rep if x[0] in all_times]))
+        new_times.append(rep[np.isin(rep[:, 0], times_array), 1])
     
-    return {'mean': np.mean(np.array(new_times), axis = 0), 'stddev': np.std(np.array(new_times), axis = 0)}
+    new_times = np.array(new_times)
 
+    return {
+        'time': times_array,
+        'mean': np.mean(new_times, axis = 0),
+        'stddev': np.std(new_times, axis = 0)
+    }
 
 numeric_parameters = ['UnitFactor', 'Precision', 'Minimum', 'Maximum', 'StartValue', 'LinkIndex', 'ResultValid', 'Result', 'StandardDeviation']
 
@@ -153,7 +162,7 @@ class Confocor3FCS(object):
             self.average = FcsData(entries[-1])
 
             for entry_no, entry in enumerate(entries[:-1]):
-                self.data['Entry ' + str(entry_no)] = FcsData(entry)
+                self.data['Repeat ' + str(entry_no+1)] = FcsData(entry)
             
             self.fits = dict([(entry_id, entry.get_fit_parameters()) for entry_id, entry in self.data.items()])
             self.fits['Average'] = self.average.get_fit_parameters()
@@ -232,11 +241,8 @@ class Confocor3FCS(object):
                     repeat_data.plot(axis = ax[0], plot_type = 'CorrelationArray', **plot_kwargs)
                     repeat_data.plot(axis = ax[1], plot_type = 'CountRateArray', **plot_kwargs)
                 
-                av_plot_kwargs = {
-                    'label': 'Average',
-                    'color': 'black'
-                }
-                #self.average.plot(axis = ax[0], plot_type = 'CorrelationArray', **av_plot_kwargs)
+                av_acf = average_time_series([rep.data['CorrelationArray'] for rep in self.data.values()])
+                ax[0].plot(av_acf['time'], av_acf['mean'], label = 'Average', color = 'black')
 
                 ax[0].set_xscale('log')
                 ax[0].legend(loc = 'upper right')

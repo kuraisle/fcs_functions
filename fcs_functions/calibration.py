@@ -6,6 +6,8 @@ Examples:
 Attributes:
     given_d: a dictionary containing literature values for the diffusion coefficients of fluorophores used for calibration of the confocal volume
     conc_units: a dictionary allowing users to specify which units of concentration they would like returned, for convenience.
+    k_b: Boltzmann's constant
+    mu_water: Viscosity of water
 '''
 
 from math import pi, sqrt
@@ -40,10 +42,14 @@ def confocal_volume(w1: float, w2: float) -> float:
     return pi**(3/2) * w1**2 * w2 * 1000
 
 def calibrate_fcs(measured_td: float, measured_sp:float, calibration_label) -> float:
+    if calibration_label in given_d.keys():
+        calibration_d = given_d[calibration_label]
+    else:
+        calibration_d = calibration_label
     return confocal_volume(
         *confocal_widths(
             measured_td,
-            given_d[calibration_label],
+            calibration_d,
             measured_sp
         )
     )
