@@ -13,6 +13,7 @@ TODO:
 import numpy as np
 from math import ceil
 import struct
+from numba import njit
 
 zen_standard_acf = np.array([2.0000000e-07, 4.0000000e-07, 6.0000000e-07, 8.0000000e-07,
        1.0000000e-06, 1.2000000e-06, 1.4000000e-06, 1.6000000e-06,
@@ -86,15 +87,12 @@ def bin_times(time_array, bin_size):
     binned = np.bincount(np.digitize(time_array, bins))/bin_size
     return np.array([bins, binned[:-1]])
 
+@njit(parallel = True)
 def acf(count_rate_array, autocorr_interval):
     intensity = count_rate_array[1,:]
     mean = np.mean(intensity)
 
-    ac_mean = []
+    ac_mean = np.array([np.mean(intensity[:-interval]*intensity[interval:]) for interval in autocorr_interval])/mean**2
 
-    for interval in autocorr_interval:
-        fluc_arr = intensity[:-interval]*intensity[interval:]
-        ac_mean.append(np.mean(fluc_arr)/mean**2)
-
-    return np.array(ac_mean)
+    return ac_mean
 
