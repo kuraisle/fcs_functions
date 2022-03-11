@@ -1,11 +1,42 @@
 '''FCS Objects
+
+Classes
+    - FcsData
+    - FcsFit
+    - Confocor3Fcs
+Values
+    - numeric_parameters
+Functions
+    - break_tab
+    - gen_field
+    - create_fields
+    - make_array
+    - average_time_series
+
+TODO:
+    - Add raw file integration
+    - implement a class for fits (FcsFit)
 '''
 import numpy as np
 import matplotlib.pyplot as plt
 from . import calibration
 from . import raw_functions
 
-def break_tab(field):
+def break_tab(field: str) -> list:
+    """Break a field by its tabs
+    
+    ConfoCor3 fcs files are broken into fields by indentation. This is a recursive function that will break a string down by indentation level.
+    Each run, a 'field' will be broken by lines. Each time there's a further indentation level, the field will be broken into sub-fields. Anything else will be a str
+    
+    Parameters
+    ----------
+    field: str
+        A string to be broken by indentation
+        
+    Returns
+    -------
+    A list of fields
+    """
     tabs = [len(x) - len(x.lstrip('\t')) for x in field]
     if any(map(lambda x: x > 0, tabs)):
         subfields = []

@@ -1,4 +1,4 @@
-'''RAW functions
+"""RAW functions
 Classes:
     - RawConfoCor3
 Values:
@@ -8,13 +8,14 @@ Functions:
     - acf
 TODO:
     - Add standard deviation estimation to acf function for fitting
-
-'''
+    - Find out why Zen output does not exactly match the computed ACF
+"""
 import numpy as np
 from math import ceil
 import struct
 from numba import njit
 
+# The x-axis values from Zen's default CountRateArray
 zen_standard_acf = np.array([2.0000000e-07, 4.0000000e-07, 6.0000000e-07, 8.0000000e-07,
        1.0000000e-06, 1.2000000e-06, 1.4000000e-06, 1.6000000e-06,
        1.8000000e-06, 2.0000000e-06, 2.2000000e-06, 2.4000000e-06,
@@ -62,37 +63,166 @@ zen_standard_acf = np.array([2.0000000e-07, 4.0000000e-07, 6.0000000e-07, 8.0000
 
 
 class RawConfoCor3(object):
-    def __init__(self, path) -> None:
+    """
+        A class for importing raw fcs files from ConfoCor 3
+
+        ...
+
+        Attributes
+        ----------
+        identifier : str
+            The file header from the raw file
+        measurement_id : list?
+            Four integers from the header
+        measurement_pos : int
+            The measurement position recorded by the instrument
+        kinetic_index : int
+            The kinetic index recorded by the instrument
+        repetition_number : int
+            The repetition number recorded by the instrument
+        sampling_frequency : int
+            The sampling frequency of the instrument (in Hz)
+        pulse_distances : list
+            The raw output of the file. Each value is the clock time recorded between each pulse
+        detector_times : numpy array
+            The times from the start of recording at which each pulse occurs in the detector's clock times
+        absolute_times : numpy array
+            The detector times converted to seconds
+        
+        Optional Attributes
+        -------------------
+        CountRateArray : numpy array
+            Created by the bin method. An array of times (in seconds) and the count rate array for that time
+        acf : numpy array
+            Created by the make_acf method. An array of time delays (in seconds) and the average autocorrelation of count rate for that delay
+        PhotonCountHistogram: numpy array
+            Created by the make_pch method. An array of count rate bins and the density of count rates that come under that bin
+        
+        Methods
+        -------
+        bin(bin_size):
+            Add a CountRateArray attribute. This splits your absolute times into bins of width bin_size.
+        make_acf(bin_size = 2*10**-7, autocorr_times = zen_standard_acf):
+            Add an acf attribute. Calculates an autocorrelation function at the time delays given in autocorr_times after binning the data with the bin_size provided
+        make_pch(bin_size = 2*10**5, pch_bins = np.arange(0,160000, 50000)):
+            
+    """
+
+    def __init__(self, path: str) -> None:
+        """
+        Parameters
+        ----------
+        path: str
+            The path leading to the raw file to read in
+        """
+
+        # The file is binary
         with open(path, 'rb') as f:
             bytes = f.read()
-
+        # The first 64 bytes make a string of ASCII characters showing the file header
         self.identifier = bytes[:64].decode('ASCII')
+        # The next 32 bytes are 4-byte integers. This can also be seen in the default file name
         self.measurement_id = struct.unpack_from('<4i', bytes[64:80])
+        # The next 16 bytes are 4-byte integers encoding the measurement position, kinetic index, repetition number, and sampling frequency
         self.measurement_pos, self.kinetic_index, self.repetition_number, self.sampling_frequency = struct.unpack_from('<4I', bytes[80:96])
-
+        # The remaining bytes (after a 32 byte gap) are integers showing the clock times of recorded pulses
         self.pulse_distances = [x[0] for x in struct.iter_unpack('<I', bytes[128:])]
+        # To convert from pulse_distances to detector times, take the cumulative sum.
         self.detector_times = np.cumsum(self.pulse_distances)
+        # To convert from detector times to real times, divide by the sampling frequency (e.g. clock time 15000 at 150000 Hz is 1 second)
         self.absolute_times = self.detector_times/self.sampling_frequency
     
-    def bin(self, bin_size):
+    def bin(self, bin_size: int) -> None:
+        """Splits the file's detected photons into count rate
+
+        Uses the function bin_times.
+        Adds a CountRateArray attribute to the object.
+
+        Parameters
+        ----------
+        bin_size: int
+            The size of bins in which to put the data, in seconds
+        """
+
         self.CountRateArray = bin_times(self.absolute_times, bin_size)
     
-    def make_acf(self, bin_size = 2*10**-7, autocorr_times = zen_standard_acf):
+    def make_acf(self, bin_size: int = 2*10**-7, autocorr_times = zen_standard_acf) -> None:
+        """Computes an autocorrelation function from the file's pulse times
+        
+        Uses the function acf.
+        Adds an acf attribute to the object
+
+        Parameters
+        ----------
+        bin_size: int
+            The bin size to pass to bin_times. Note, this bins data separately from the CountRateArray attribute
+        autocorr_times: numpy array
+            The time delays (tau) at which to calculate the autocorrelation function. See documentation for the acf function for details
+        """
+
         binned = bin_times(self.absolute_times, bin_size)
         intervals = np.array(autocorr_times/bin_size, dtype = int)
         self.acf = np.array([autocorr_times, acf(binned, intervals)])
+    
+    def make_pch(self, bin_size:int = 2*10**-5, pch_bins: 'np.array' = np.arange(0, 160000, 50000)) -> None:
+        """Creates a photon counting histogram from the file's pulse times
 
-def bin_times(time_array, bin_size):
+        Adds a PhotonCountHistogram attribute to the object
+
+        Parameters
+        ----------
+        bin_size: int
+            The binning for the pulse times. Note, this is not the bins for the PCH
+        pch_bins: numpy array
+            The bins for the PCH
+        """
+
+        binned = bin_times(self.absolute_times, bin_size)
+        self.PhotonCountHistogram = np.histogram(binned, bins = pch_bins)
+
+def bin_times(time_array: 'np.array', bin_size: int) -> 'np.array':
+    """Bins an array of times into the bin sizes provided
+
+    Parameters
+    ----------
+    time_array: numpy array
+        The times of recorded responses from the detector
+    bin_size: int
+        The size of bins into which time_array should be split
+
+    Returns
+    -------
+    A 2-Dimensional numpy array with the binned times and the count rates within those bins
+    """
+    # Compute the bin boundaries for the time array
     bins = np.arange(bin_size, time_array[-1], bin_size)
+    # Count the responses within each bin, then divide it by the bin size to convert this into a count rate
     binned = np.bincount(np.digitize(time_array, bins))/bin_size
+    # Return a 2-Dimensional array of the bin times and the binned data. The last bin is trimmed off as it may not be full length (this is what Zen seems to do, so I copied it)
     return np.array([bins, binned[:-1]])
 
+# Calculating the ACF is **very** slow without JIT compiling and parallel processing
 @njit(parallel = True)
 def acf(count_rate_array, autocorr_interval):
-    intensity = count_rate_array[1,:]
-    mean = np.mean(intensity)
+    """Computes an autocorrelation function for the provided count rate array
+    
+    Parameters
+    ----------
+    count_rate_array: numpy array
+        An array of count rates with the times in the first row and count rates in the second
+    autocorr_interval: numpy array
+        An array of times at which to calculate the autocorrelation function.
+        The times must be a multiple of the count rate array bin sizes.
+        The times provided are the default times for a 10 second trace saved in Zen. The calculation is pretty slow, so I would recommend keeping it around this size.
+    Returns
+    -------
+    A numpy array of the autocorrelation times and the mean autocorrelation at those times
+    """
 
-    ac_mean = np.array([np.mean(intensity[:-interval]*intensity[interval:]) for interval in autocorr_interval])/mean**2
+    intensity = count_rate_array[1,:]
+    mean_sq = np.mean(intensity)**2
+    # Compute the ACF based on the FCS ACF definition G(tau) = (<I(t)*I(t+tau)>/<I**2>)
+    ac_mean = np.array([np.mean(intensity[:-interval]*intensity[interval:]) for interval in autocorr_interval])/mean_sq
 
     return ac_mean
 
