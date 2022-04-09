@@ -57,11 +57,37 @@ def break_tab(field: str) -> list:
     else:
         return field
 
-def gen_field(field_string, field_dict):
+def gen_field(field_string: str, field_dict: dict) -> None:
+    """Generates a dictionary entry from a string
+
+    Values in ConfoCor3 fcs files are shown by 'Key= Value'. This adds a key: value pair for this to the target dictionary
+
+    Parameters
+    ----------
+    field_string: str
+        A string to be converted into a dictionary
+    field_dict: dict
+        A dictionary for the key:value pair to be added to
+
+    Returns
+    -------
+    None
+    """
     name, field = field_string.split('=')
     field_dict[name[:-1]] = field[:-1].lstrip()
 
-def create_fields(field_list):
+def create_fields(field_list: str) -> dict:
+    """Creates a dictionary from ConfoCor3 values
+
+    Parameters
+    ----------
+    field_list: str
+        A list of strings for conversion to a dictionary
+    
+    Returns
+    -------
+    A dictionary of the values in the field list
+    """
     fields = {}
     for item in field_list:
         if len(item) == 1:
@@ -69,7 +95,18 @@ def create_fields(field_list):
                 gen_field(item[0], fields)
     return fields
 
-def make_array(array_list):
+def make_array(array_list: list) -> 'np.array':
+    """Converts a list of strings into an array
+    
+    Parameters
+    ----------
+    array_list: list
+        A list of strings where each string is a row of an array, with values, separated by tabs, convertible to floats
+    
+    Returns
+    -------
+    A numpy array with a row for each item of the original list
+    """
     out = []
     for item in array_list:
         item_str = item[0][:-3].split('\t')
@@ -78,6 +115,8 @@ def make_array(array_list):
     return np.array(out)
 
 def average_time_series(data):
+    """
+    """
     all_times = [set(rep[:,0]) for rep in data]
     times = all_times[0]
     for rep in all_times[1:]:
@@ -260,6 +299,7 @@ class Confocor3FCS(object):
     premade_plots = ['ACF', 'PCH']
 
     def plot_all_repeats(self, plot_type):
+        # Add ability to omit some repeats, maybe even by filter e.g. max(rep['CorrelationArray'][:,1]) < x
         if plot_type in self.premade_plots:
             if plot_type == 'ACF':
                 fig, ax = plt.subplots(nrows = 2, figsize = [8,6], gridspec_kw={'height_ratios': [3,1]}, dpi = 600)
@@ -278,6 +318,43 @@ class Confocor3FCS(object):
                 ax[0].set_xscale('log')
                 ax[0].legend(loc = 'upper right')
                 plt.tight_layout()
+        # Add other plot types, e.g. 'ACF with fit'
         else:
             pass
+
+class Experiment(object):
+    def __init__(self, calibration):
+        self.calibration = calibration
+        self.data = dict()
+        self._trace_count = 1
+        if type(calibration.confocal_volume) == float:
+            self.confocal_volume = calibration.confocal_volume
+            self.confocal_widths = calibration.confocal_widths
+
+    def add_run(self, trace, **kwargs):
+        # Add check for trace class being appropriate
+        if 'trace_name' in kwargs:
+            self.data[kwargs.trace_name] = trace
+        else:
+            self.data['trace'+str(self._trace_count)] = trace
+        self._trace_count += 1
+    
+    def calibrate_by(self, calibration_label):
+        self.confocal_volume = calibration.calibrate_fcs(
+            self.calibration.average.fit['Parameters']['Translation diffusion time species 1']['Result'],
+            self.calibration.average.fit['Parameters']['Translation structural parameter']['Result'],
+            calibration_label
+        )
+        self.confocal_widths = calibration.confocal_widths(
+            self.calibration.average.fit['Parameters']['Translation diffusion time species 1']['Result'],
+            calibration.given_d[calibration_label],
+            self.calibration.average.fit['Parameters']['Translation structural parameter']['Result']
+        )
+        # Add calibration of traces
+    
+    def multiplot(self, rows: str, col: str, plot_type: str = 'ACF', **kwargs):
+        pass
+
+    def get_average_parameters(self, parameters):
+        pass
 
